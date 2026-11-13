@@ -100,6 +100,7 @@ struct EditUnitView: View {
 
     @State private var name = ""
     @State private var host = ""
+    @State private var away = ""
     @State private var testing = false
     @State private var testResult: (ok: Bool, text: String)? = nil
     @State private var errorText: String? = nil
@@ -118,6 +119,14 @@ struct EditUnitView: View {
                         .autocorrectionDisabled(true)
                 } header: { Text("IP address") } footer: {
                     Text("The address of the aircon's Wi-Fi adapter, without http:// and without a port.")
+                }
+                Section {
+                    TextField("my-address.example.com:51444", text: $away)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled(true)
+                } header: { Text("Away address (optional)") } footer: {
+                    Text("Only if you forward a port on your router to this aircon. This is the less safe way to reach it from outside: the adapter has no login, so anyone who finds the open port could control it. Prefer the home connection in Settings. Away, the app only uses encrypted HTTPS here.")
                 }
                 Section {
                     Button {
@@ -158,7 +167,7 @@ struct EditUnitView: View {
                 Text("This only removes it from this app. The aircon itself isn't changed.")
             }
             .onAppear {
-                if let e = existing { name = e.name; host = e.host }
+                if let e = existing { name = e.name; host = e.host; away = e.awayAddress ?? "" }
             }
         }
     }
@@ -175,7 +184,8 @@ struct EditUnitView: View {
         var list = store.configs
         let clean = UnitConfig(id: existing?.id ?? UUID(),
                                name: name.trimmingCharacters(in: .whitespaces),
-                               host: host.trimmingCharacters(in: .whitespaces))
+                               host: host.trimmingCharacters(in: .whitespaces),
+                               awayAddress: away.trimmingCharacters(in: .whitespaces).isEmpty ? nil : away.trimmingCharacters(in: .whitespaces))
         if let e = existing, let i = list.firstIndex(where: { $0.id == e.id }) { list[i] = clean } else { list.append(clean) }
         if let problem = store.validate(list) { errorText = problem; return }
         store.save(list)

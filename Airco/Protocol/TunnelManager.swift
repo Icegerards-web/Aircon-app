@@ -52,11 +52,15 @@ final class TunnelManager {
 
     /// Use the tunnel only when a config exists and the phone is *not* on the aircon's own network.
     func shouldUse(host: String) -> Bool {
-        guard isConfigured else { return false }
+        return isConfigured && !TunnelManager.onSameNetwork(host: host)
+    }
+
+    /// Is the phone on the same /24 network as this address? (Host names are assumed to be local.)
+    static func onSameNetwork(host: String) -> Bool {
         let parts = host.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 4 else { return false }               // host names: assume local
+        guard parts.count == 4 else { return true }
         let prefix = "\(parts[0]).\(parts[1]).\(parts[2])."
-        return !Discovery.localPrefixes().contains(prefix)
+        return Discovery.localPrefixes().contains(prefix)
     }
 
     // MARK: running it
@@ -67,7 +71,12 @@ final class TunnelManager {
         if running && WgbridgeIsRunning() { return }
         guard let conf = config else { throw WfRacError.connection("No home connection is set up (Settings, Away from home).") }
         do {
-            try await Task.detached { () throws -> Void in try WgbridgeStart(conf) }.value
+            try await Task.detached { () throws -> Void in
+                var err: NSError?
+                let ok = WgbridgeStart(conf, &err)
+                if let e = err { throw e }
+                if !ok { throw WfRacError.connection("the tunnel did not start") }
+            }.value
             running = true
         } catch {
             throw WfRacError.connection("Couldn't start the home connection: \(error.localizedDescription)")
@@ -78,7 +87,9 @@ final class TunnelManager {
         try await ensureStarted()
         do {
             return try await Task.detached { () -> (Int, Data) in
-                let reply: WgbridgeReply? = try WgbridgePost(url, body, Int(timeout))
+                var err: NSError?
+                let reply: WgbridgeReply? = WgbridgePost(url, body, Int(timeout), &err)
+                if let e = err { throw e }
                 guard let r = reply else { throw WfRacError.connection("no answer through the home connection") }
                 return (r.status(), r.body() ?? Data())
             }.value

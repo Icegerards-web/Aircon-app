@@ -5,6 +5,7 @@ struct UnitConfig: Codable, Identifiable, Equatable {
     var id = UUID()
     var name: String
     var host: String
+    var awayAddress: String? = nil      // optional "my.public.address:port" used when away from home (no VPN)
 }
 
 /// The list of aircons, saved on the phone. Also owns the background refresh.
@@ -85,8 +86,21 @@ final class Store: ObservableObject {
             if name.isEmpty || name.count > 40 { return "Aircon \(i + 1): give it a name (max 40 characters)." }
             if !Store.isValidHost(host) { return "Aircon \(i + 1): '\(host)' is not a valid IP address or host name (no http://, no port)." }
             if seen.contains(host.lowercased()) { return "Aircon \(i + 1): the address \(host) is used twice." }
+            if let a = u.awayAddress?.trimmingCharacters(in: .whitespaces), !a.isEmpty, Store.parseAway(a) == nil {
+                return "Aircon \(i + 1): the away address must look like my-address.example.com:51444 (a name or IP, then : and a port)."
+            }
             seen.insert(host.lowercased())
         }
+        return nil
+    }
+
+    /// "host:port" -> (host, port). The port defaults to 51443.
+    static func parseAway(_ text: String) -> (String, Int)? {
+        let t = text.trimmingCharacters(in: .whitespaces)
+        if t.isEmpty { return nil }
+        let parts = t.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
+        if parts.count == 1 { return isValidHost(parts[0]) ? (parts[0], 51443) : nil }
+        if parts.count == 2, isValidHost(parts[0]), let p = Int(parts[1]), (1...65535).contains(p) { return (parts[0], p) }
         return nil
     }
 

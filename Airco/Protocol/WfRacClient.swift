@@ -90,6 +90,7 @@ final class WfRacClient {
     let operatorId: String
     let deviceId: String
     let timeZone: String
+    private let awayTarget: (String, Int)?     // optional public address (port-forwarded), used only when away from home
 
     private let session: URLSession
     private let gate = AsyncGate()
@@ -102,7 +103,8 @@ final class WfRacClient {
     static let writeLockMaxWait: TimeInterval = 61
     static let writeLockRetryDelay: TimeInterval = 10
 
-    init(host: String, port: Int = 51443, operatorId: String, deviceId: String, timeZone: String) {
+    init(host: String, port: Int = 51443, operatorId: String, deviceId: String, timeZone: String, awayAddress: String? = nil) {
+        self.awayTarget = awayAddress.flatMap { Store.parseAway($0) }
         self.host = host
         self.port = port
         self.operatorId = operatorId
@@ -152,6 +154,7 @@ final class WfRacClient {
 
         var order = ["http", "https"]
         if let m = method { order = [m] + order.filter { $0 != m } }
+        if case .away = route() { order = ["https"] }     // across the internet: encrypted only
         var firstError: Error? = nil
         for (index, proto) in order.enumerated() {
             do {
@@ -177,13 +180,27 @@ final class WfRacClient {
         throw firstError ?? WfRacError.connection("no answer")
     }
 
+    private enum Route { case direct, tunnel, away(String, Int) }
+
+    /// Home network -> talk to the adapter directly. Away -> the in-app tunnel if one is set up, otherwise the
+    /// optional port-forwarded address.
+    private func route() -> Route {
+        if TunnelManager.shared.shouldUse(host: host) { return .tunnel }
+        if let a = awayTarget, !TunnelManager.onSameNetwork(host: host) { return .away(a.0, a.1) }
+        return .direct
+    }
+
     private func execute(proto: String, command: String, body: Data) async throws -> [String: Any] {
-        guard let url = URL(string: "\(proto)://\(host):\(port)/beaver/command/\(command)") else {
+        var targetHost = host
+        var targetPort = port
+        let chosen = route()
+        if case .away(let h, let p) = chosen { targetHost = h; targetPort = p }
+        guard let url = URL(string: "\(proto)://\(targetHost):\(targetPort)/beaver/command/\(command)") else {
             throw WfRacError.connection("'\(host)' is not a valid address")
         }
         let data: Data
         let statusCode: Int
-        if TunnelManager.shared.shouldUse(host: host) {
+        if case .tunnel = chosen {
             // Not on the home network: go through the in-app WireGuard tunnel.
             let r = try await TunnelManager.shared.post(url: url.absoluteString, body: body, timeout: WfRacClient.requestTimeout)
             data = r.data

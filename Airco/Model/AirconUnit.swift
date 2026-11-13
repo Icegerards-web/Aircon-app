@@ -117,7 +117,7 @@ final class AirconUnit: ObservableObject, Identifiable {
         } else {
             isDemo = false
             client = WfRacClient(host: config.host, operatorId: operatorId, deviceId: deviceId,
-                                 timeZone: TimeZone.current.identifier)
+                                 timeZone: TimeZone.current.identifier, awayAddress: config.awayAddress)
         }
     }
 
