@@ -34,38 +34,45 @@ final class Store: ObservableObject {
             defaults.set(deviceId, forKey: "deviceId")
         }
         demo = defaults.bool(forKey: "demo")
-        var configs: [UnitConfig] = []
         if let data = defaults.data(forKey: "units"), let list = try? JSONDecoder().decode([UnitConfig].self, from: data) {
             configs = list
         }
-        rebuild(configs)
+        rebuild()
     }
 
-    var configs: [UnitConfig] { return units.filter { !$0.isDemo }.map { $0.config } }
+    /// The saved (real) aircons. Kept separately, so turning demo mode on never throws them away.
+    private(set) var configs: [UnitConfig] = []
 
     // MARK: editing the list
 
-    func save(_ configs: [UnitConfig]) {
+    func save(_ list: [UnitConfig]) {
         demo = false
         defaults.set(false, forKey: "demo")
-        if let data = try? JSONEncoder().encode(configs) { defaults.set(data, forKey: "units") }
-        rebuild(configs)
+        configs = list
+        if let data = try? JSONEncoder().encode(list) { defaults.set(data, forKey: "units") }
+        rebuild()
         refreshAllNow()
     }
 
+    /// Demo mode shows two pretend aircons with random names and settings. Your real list is kept and comes back when you switch it off.
     func setDemo(_ on: Bool) {
         demo = on
         defaults.set(on, forKey: "demo")
-        rebuild(configs)
+        rebuild()
         refreshAllNow()
     }
 
-    private func rebuild(_ configs: [UnitConfig]) {
-        if demo && configs.isEmpty {
-            units = [
-                AirconUnit(config: UnitConfig(name: "Living room", host: "demo-1"), operatorId: operatorId, deviceId: deviceId, demoIndex: 0),
-                AirconUnit(config: UnitConfig(name: "Bedroom", host: "demo-2"), operatorId: operatorId, deviceId: deviceId, demoIndex: 1)
-            ]
+    /// Roll new random demo aircons.
+    func shuffleDemo() {
+        guard demo else { return }
+        rebuild(newDemo: true)
+    }
+
+    private func rebuild(newDemo: Bool = false) {
+        if demo {
+            if newDemo || !units.contains(where: { $0.isDemo }) {
+                units = AirconUnitFactory.demoUnits(operatorId: operatorId, deviceId: deviceId)
+            }
             return
         }
         // Keep a unit that didn't change: it is already registered with its adapter.
@@ -151,6 +158,16 @@ final class Store: ObservableObject {
             return (true, "Found it")
         } catch {
             return (false, friendlyError(error))
+        }
+    }
+}
+
+@MainActor
+enum AirconUnitFactory {
+    static func demoUnits(operatorId: String, deviceId: String) -> [AirconUnit] {
+        return DemoSpec.randomPair().map { name, spec in
+            AirconUnit(config: UnitConfig(name: name, host: "demo-\(name.lowercased().replacingOccurrences(of: " ", with: "-"))"),
+                       operatorId: operatorId, deviceId: deviceId, demo: spec)
         }
     }
 }

@@ -42,10 +42,13 @@ struct SettingsView: View {
                 Section("Try it out") {
                     Toggle(isOn: Binding(get: { store.demo }, set: { store.setDemo($0) })) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Demo units")
-                            Text("Pretend aircons to explore the app without touching the real ones.")
+                            Text("Demo mode")
+                            Text("Shows two pretend aircons with random names and settings, to explore the app without touching the real ones. Your real aircons are kept.")
                                 .font(.footnote).foregroundColor(Theme.ink2)
                         }
+                    }
+                    if store.demo {
+                        Button { store.shuffleDemo() } label: { Label("Pick two new random aircons", systemImage: "shuffle") }
                     }
                 }
                 Section("How it connects") {

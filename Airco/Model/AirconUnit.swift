@@ -42,6 +42,32 @@ struct Change: Equatable {
     }
 }
 
+/// Starting values for a pretend aircon.
+struct DemoSpec {
+    var power: Bool
+    var mode: Int
+    var temp: Double
+    var room: Double
+    var outdoor: Double
+    var fan: Int
+    var vane: Int
+    var lr: Int
+
+    /// Random but believable: two units never get the same name, and at least the first one is running.
+    static func randomPair() -> [(String, DemoSpec)] {
+        let names = ["Living room", "Bedroom", "Office", "Kitchen", "Guest room", "Attic", "Studio", "Nursery"].shuffled()
+        let outdoor = Double(Int.random(in: 4...34))
+        func make(forcePower: Bool) -> DemoSpec {
+            let mode = [0, 1, 1, 2, 3, 4].randomElement() ?? 1
+            let target = Double(Int.random(in: 36...52)) / 2          // 18.0 ... 26.0
+            let room = (Double(Int.random(in: 170...290)) / 10)        // 17.0 ... 29.0
+            return DemoSpec(power: forcePower || Bool.random(), mode: mode, temp: target, room: room, outdoor: outdoor,
+                            fan: Int.random(in: 0...4), vane: Int.random(in: 0...4), lr: Int.random(in: 1...5))
+        }
+        return [(names[0], make(forcePower: true)), (names[1], make(forcePower: false))]
+    }
+}
+
 extension Array {
     subscript(safe i: Int) -> Element? { return (i >= 0 && i < count) ? self[i] : nil }
 }
@@ -100,20 +126,20 @@ final class AirconUnit: ObservableObject, Identifiable {
 
     static let pendingSeconds: TimeInterval = 20
 
-    init(config: UnitConfig, operatorId: String, deviceId: String, demoIndex: Int? = nil) {
+    init(config: UnitConfig, operatorId: String, deviceId: String, demo: DemoSpec? = nil) {
         self.config = config
-        if let d = demoIndex {
+        if let d = demo {
             isDemo = true
             online = true
             hasReading = true
-            power = d == 0
-            mode = d == 0 ? 1 : 2
-            temp = d == 0 ? 21 : 23
-            roomTemp = d == 0 ? 25.3 : 19.2
-            outdoorTemp = 29.0
-            fan = d == 0 ? 0 : 2
-            vane = d == 0 ? 2 : 4
-            lr = 3
+            power = d.power
+            mode = d.mode
+            temp = d.temp
+            roomTemp = d.room
+            outdoorTemp = d.outdoor
+            fan = d.fan
+            vane = d.vane
+            lr = d.lr
         } else {
             isDemo = false
             client = WfRacClient(host: config.host, operatorId: operatorId, deviceId: deviceId,
