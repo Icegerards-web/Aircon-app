@@ -1,0 +1,39 @@
+name: Airco
+options:
+  bundleIdPrefix: com.airco
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1"
+    SWIFT_STRICT_CONCURRENCY: minimal
+targets:
+  Airco:
+    type: application
+    platform: iOS
+    sources:
+      - path: Airco
+    info:
+      path: Airco/Info.plist
+      properties:
+        CFBundleDisplayName: Airco
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        # iOS asks for this the first time the app talks to something on your Wi-Fi.
+        NSLocalNetworkUsageDescription: "Airco talks directly to your aircon Wi-Fi adapters on your home network."
+        # The adapters speak plain HTTP and HTTPS with a self-made certificate, on a local address.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.airco.app
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: Airco/Info.plist

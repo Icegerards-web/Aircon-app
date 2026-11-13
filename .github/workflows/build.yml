@@ -1,0 +1,27 @@
+# Compile check on every push (free for public repositories). Also produces the unsigned IPA as a download.
+name: Build
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: xcodegen generate
+      - name: Build without signing
+        run: |
+          xcodebuild -project Airco.xcodeproj -scheme Airco -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build
+      - name: Package the unsigned IPA
+        run: |
+          mkdir Payload && cp -R build/Build/Products/Release-iphoneos/Airco.app Payload/
+          zip -qry Airco.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Airco-unsigned-ipa
+          path: Airco.ipa

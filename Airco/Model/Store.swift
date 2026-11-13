@@ -1,0 +1,142 @@
+import Foundation
+import SwiftUI
+
+struct UnitConfig: Codable, Identifiable, Equatable {
+    var id = UUID()
+    var name: String
+    var host: String
+}
+
+/// The list of aircons, saved on the phone. Also owns the background refresh.
+@MainActor
+final class Store: ObservableObject {
+    @Published private(set) var units: [AirconUnit] = []
+    @Published private(set) var demo = false
+
+    private(set) var operatorId: String
+    private(set) var deviceId: String
+    private var pollTask: Task<Void, Never>? = nil
+    private let defaults = UserDefaults.standard
+
+    static let pollSeconds: UInt64 = 8
+    static let maxUnits = 8
+
+    init() {
+        // Random ids that identify this phone to the adapters (the adapter keeps a list of up to 4 remote controls).
+        if let o = defaults.string(forKey: "operatorId"), let d = defaults.string(forKey: "deviceId") {
+            operatorId = o
+            deviceId = d
+        } else {
+            operatorId = UUID().uuidString.lowercased()
+            deviceId = UUID().uuidString.lowercased()
+            defaults.set(operatorId, forKey: "operatorId")
+            defaults.set(deviceId, forKey: "deviceId")
+        }
+        demo = defaults.bool(forKey: "demo")
+        var configs: [UnitConfig] = []
+        if let data = defaults.data(forKey: "units"), let list = try? JSONDecoder().decode([UnitConfig].self, from: data) {
+            configs = list
+        }
+        rebuild(configs)
+    }
+
+    var configs: [UnitConfig] { return units.filter { !$0.isDemo }.map { $0.config } }
+
+    // MARK: editing the list
+
+    func save(_ configs: [UnitConfig]) {
+        demo = false
+        defaults.set(false, forKey: "demo")
+        if let data = try? JSONEncoder().encode(configs) { defaults.set(data, forKey: "units") }
+        rebuild(configs)
+        refreshAllNow()
+    }
+
+    func setDemo(_ on: Bool) {
+        demo = on
+        defaults.set(on, forKey: "demo")
+        rebuild(configs)
+        refreshAllNow()
+    }
+
+    private func rebuild(_ configs: [UnitConfig]) {
+        if demo && configs.isEmpty {
+            units = [
+                AirconUnit(config: UnitConfig(name: "Living room", host: "demo-1"), operatorId: operatorId, deviceId: deviceId, demoIndex: 0),
+                AirconUnit(config: UnitConfig(name: "Bedroom", host: "demo-2"), operatorId: operatorId, deviceId: deviceId, demoIndex: 1)
+            ]
+            return
+        }
+        // Keep a unit that didn't change: it is already registered with its adapter.
+        var next: [AirconUnit] = []
+        for c in configs {
+            if let old = units.first(where: { !$0.isDemo && $0.config == c }) { next.append(old) }
+            else { next.append(AirconUnit(config: c, operatorId: operatorId, deviceId: deviceId)) }
+        }
+        units = next
+    }
+
+    func validate(_ list: [UnitConfig]) -> String? {
+        if list.count > Store.maxUnits { return "At most \(Store.maxUnits) aircons." }
+        var seen = Set<String>()
+        for (i, u) in list.enumerated() {
+            let name = u.name.trimmingCharacters(in: .whitespaces)
+            let host = u.host.trimmingCharacters(in: .whitespaces)
+            if name.isEmpty || name.count > 40 { return "Aircon \(i + 1): give it a name (max 40 characters)." }
+            if !Store.isValidHost(host) { return "Aircon \(i + 1): '\(host)' is not a valid IP address or host name (no http://, no port)." }
+            if seen.contains(host.lowercased()) { return "Aircon \(i + 1): the address \(host) is used twice." }
+            seen.insert(host.lowercased())
+        }
+        return nil
+    }
+
+    static func isValidHost(_ host: String) -> Bool {
+        if host.isEmpty || host.count > 253 { return false }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
+        if host.unicodeScalars.contains(where: { !allowed.contains($0) }) { return false }
+        return !host.hasPrefix("-") && !host.hasPrefix(".") && !host.hasSuffix("-") && !host.hasSuffix(".")
+    }
+
+    // MARK: refreshing
+
+    func startPolling() {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self else { return }
+                await self.refreshAll()
+                try? await Task.sleep(nanoseconds: Store.pollSeconds * 1_000_000_000)
+            }
+        }
+    }
+
+    func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
+    }
+
+    func refreshAll() async {
+        let current = units
+        await withTaskGroup(of: Void.self) { group in
+            for u in current { group.addTask { await u.refresh() } }
+        }
+    }
+
+    func refreshAllNow() {
+        let current = units
+        for u in current { Task { await u.refresh() } }
+    }
+
+    /// Test one address (the "Test connection" button): does an aircon adapter answer there?
+    func test(host: String) async -> (ok: Bool, message: String) {
+        let h = host.trimmingCharacters(in: .whitespaces)
+        if !Store.isValidHost(h) { return (false, "That is not a valid IP address or host name.") }
+        let client = WfRacClient(host: h, operatorId: operatorId, deviceId: deviceId, timeZone: TimeZone.current.identifier)
+        do {
+            _ = try await client.airconId()
+            return (true, "Found it")
+        } catch {
+            return (false, friendlyError(error))
+        }
+    }
+}

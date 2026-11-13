@@ -1,0 +1,43 @@
+# Builds an UNSIGNED iOS app and packages it as Airco.ipa.
+# You don't need an Apple Developer account for this: AltStore / Sideloadly (or similar) re-sign the IPA
+# with your free Apple ID when you install it on your phone.
+workflows:
+  airco-unsigned-ipa:
+    name: Airco (unsigned IPA for sideloading)
+    instance_type: mac_mini_m2
+    max_build_duration: 30
+    environment:
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+      - name: Generate the Xcode project
+        script: xcodegen generate
+      - name: Build without signing
+        script: |
+          xcodebuild \
+            -project Airco.xcodeproj \
+            -scheme Airco \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build
+      - name: Package the unsigned IPA
+        script: |
+          APP="build/Build/Products/Release-iphoneos/Airco.app"
+          test -d "$APP"
+          rm -rf Payload Airco.ipa
+          mkdir Payload
+          cp -R "$APP" Payload/
+          zip -qry Airco.ipa Payload
+          ls -la Airco.ipa
+    artifacts:
+      - Airco.ipa
