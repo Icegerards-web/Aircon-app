@@ -51,7 +51,7 @@ extension Array {
 @MainActor
 final class AirconUnit: ObservableObject, Identifiable {
     let config: UnitConfig
-    var id: UUID { config.id }
+    nonisolated var id: UUID { config.id }
     var name: String { config.name }
     var host: String { config.host }
     let isDemo: Bool

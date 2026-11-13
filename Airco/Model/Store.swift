@@ -95,7 +95,7 @@ final class Store: ObservableObject {
     }
 
     /// "host:port" -> (host, port). The port defaults to 51443.
-    static func parseAway(_ text: String) -> (String, Int)? {
+    nonisolated static func parseAway(_ text: String) -> (String, Int)? {
         let t = text.trimmingCharacters(in: .whitespaces)
         if t.isEmpty { return nil }
         let parts = t.split(separator: ":", omittingEmptySubsequences: false).map(String.init)
@@ -104,7 +104,7 @@ final class Store: ObservableObject {
         return nil
     }
 
-    static func isValidHost(_ host: String) -> Bool {
+    nonisolated static func isValidHost(_ host: String) -> Bool {
         if host.isEmpty || host.count > 253 { return false }
         let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
         if host.unicodeScalars.contains(where: { !allowed.contains($0) }) { return false }
