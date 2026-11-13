@@ -15,6 +15,13 @@ workflows:
         - pattern: main
           include: true
     scripts:
+      - name: Build the in-app WireGuard (gomobile)
+        script: |
+          brew install go
+          export PATH="$PATH:$(go env GOPATH)/bin"
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+          cd wgbridge && gomobile bind -target ios/arm64 -o ../Wgbridge.xcframework .
       - name: Install XcodeGen
         script: brew install xcodegen
       - name: Generate the Xcode project

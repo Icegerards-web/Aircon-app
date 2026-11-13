@@ -17,6 +17,10 @@ targets:
     platform: iOS
     sources:
       - path: Airco
+    dependencies:
+      # WireGuard that runs inside the app, built from /wgbridge by the CI step (gomobile)
+      - framework: Wgbridge.xcframework
+        embed: false
     info:
       path: Airco/Info.plist
       properties:
@@ -35,5 +39,6 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.airco.app
+        OTHER_LDFLAGS: "$(inherited) -lresolv"
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Airco/Info.plist

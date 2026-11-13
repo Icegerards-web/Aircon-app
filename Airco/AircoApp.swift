@@ -12,7 +12,7 @@ struct AircoApp: App {
                 .tint(Theme.blue)
                 .onChange(of: scenePhase) { phase in
                     // Only talk to the adapters while the app is open (they are slow and don't like being hammered).
-                    if phase == .active { store.startPolling() } else { store.stopPolling() }
+                    if phase == .active { store.startPolling() } else { store.stopPolling(); TunnelManager.shared.stop() }
                 }
                 .onAppear { store.startPolling() }
         }

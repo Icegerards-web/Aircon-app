@@ -5,3 +5,4 @@ DerivedData/
 *.ipa
 Payload/
 xcuserdata/
+Wgbridge.xcframework/

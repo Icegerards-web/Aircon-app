@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var store: Store
@@ -53,12 +54,7 @@ struct SettingsView: View {
                             .font(.subheadline)
                     } icon: { Image(systemName: "checkmark.shield").foregroundColor(Theme.okText) }
                 }
-                Section("Away from home") {
-                    Label {
-                        Text("The adapters only listen on your home network, and there is no server in between. To control them from outside, connect your phone to your home network with a VPN (for example the WireGuard app together with your router's WireGuard server). While the VPN is on, this app works exactly as it does at home, using the same addresses.")
-                            .font(.subheadline)
-                    } icon: { Image(systemName: "house.and.flag").foregroundColor(Theme.blue) }
-                }
+                AwayFromHomeSection()
             }
             .navigationTitle("Settings")
             .toolbar {
@@ -299,6 +295,90 @@ struct DetailsView: View {
                 }
             }
             .task { text = await unit.diagnosticsText() }
+        }
+    }
+}
+
+// MARK: - away from home (WireGuard inside the app)
+
+private struct AwayFromHomeSection: View {
+    @EnvironmentObject var store: Store
+    @State private var configured = TunnelManager.shared.isConfigured
+    @State private var importing = false
+    @State private var pasting = false
+    @State private var message: String? = nil
+    @State private var messageIsError = false
+
+    var body: some View {
+        Section {
+            Label {
+                Text(configured
+                     ? "Home connection is set up. Away from home, the app connects to your home WireGuard server by itself while it is open. No VPN icon, and the rest of your phone's internet is untouched."
+                     : "To control your aircons away from home, give the app the connection file of your home WireGuard server. The app only uses it while it is open, and only for the aircons.")
+                    .font(.subheadline)
+            } icon: { Image(systemName: configured ? "checkmark.shield" : "house.and.flag").foregroundColor(configured ? Theme.okText : Theme.blue) }
+            Button { importing = true } label: { Label("Import WireGuard file…", systemImage: "square.and.arrow.down") }
+            Button { pasting = true } label: { Label("Paste WireGuard config…", systemImage: "doc.on.clipboard") }
+            if configured {
+                Button(role: .destructive) {
+                    TunnelManager.shared.remove()
+                    configured = false
+                    message = "Home connection removed."
+                    messageIsError = false
+                } label: { Label("Remove home connection", systemImage: "trash") }
+            }
+            if let m = message {
+                Text(m).font(.footnote).foregroundColor(messageIsError ? Theme.bad : Theme.okText)
+            }
+        } header: { Text("Away from home") } footer: {
+            Text("You need a WireGuard server at home (see AWAY-FROM-HOME.md in the project for a step-by-step guide). Your phone must be on a different network than the aircons for the tunnel to be used.")
+        }
+        .fileImporter(isPresented: $importing, allowedContentTypes: [.item], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                let access = url.startAccessingSecurityScopedResource()
+                defer { if access { url.stopAccessingSecurityScopedResource() } }
+                if let text = try? String(contentsOf: url, encoding: .utf8) { apply(text) }
+                else { show("Couldn't read that file.", error: true) }
+            case .failure(let e):
+                show(e.localizedDescription, error: true)
+            }
+        }
+        .sheet(isPresented: $pasting) { PasteConfigView { apply($0) } }
+    }
+
+    private func apply(_ text: String) {
+        if let problem = TunnelManager.shared.save(text) { show(problem, error: true) }
+        else { configured = true; show("Saved. It will be used automatically when you're away from home.", error: false) }
+    }
+
+    private func show(_ text: String, error: Bool) { message = text; messageIsError = error }
+}
+
+private struct PasteConfigView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    let onSave: (String) -> Void
+
+    var body: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Paste the whole contents of the WireGuard file (it starts with [Interface]). It stays on this phone.")
+                    .font(.footnote).foregroundColor(Theme.ink2)
+                TextEditor(text: $text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.line))
+            }
+            .padding(16)
+            .navigationTitle("WireGuard config")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("Save") { onSave(text); dismiss() }.fontWeight(.semibold) }
+            }
         }
     }
 }

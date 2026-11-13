@@ -181,19 +181,32 @@ final class WfRacClient {
         guard let url = URL(string: "\(proto)://\(host):\(port)/beaver/command/\(command)") else {
             throw WfRacError.connection("'\(host)' is not a valid address")
         }
-        var req = URLRequest(url: url, timeoutInterval: WfRacClient.requestTimeout)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = body
         let data: Data
-        let resp: URLResponse
-        do {
-            (data, resp) = try await session.data(for: req)
-        } catch let e as URLError {
-            throw WfRacError.connection(friendlyError(e))
+        let statusCode: Int
+        if TunnelManager.shared.shouldUse(host: host) {
+            // Not on the home network: go through the in-app WireGuard tunnel.
+            let r = try await TunnelManager.shared.post(url: url.absoluteString, body: body, timeout: WfRacClient.requestTimeout)
+            data = r.data
+            statusCode = r.status
+        } else {
+            var req = URLRequest(url: url, timeoutInterval: WfRacClient.requestTimeout)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+            do {
+                let (d, resp) = try await session.data(for: req)
+                data = d
+                statusCode = (resp as? HTTPURLResponse)?.statusCode ?? 200
+            } catch let e as URLError {
+                var text = friendlyError(e)
+                if TunnelManager.shared.isConfigured == false && !Discovery.localPrefixes().contains(where: { host.hasPrefix($0) }) {
+                    text += " It looks like you're away from home: set up the home connection in Settings."
+                }
+                throw WfRacError.connection(text)
+            }
         }
-        if let http = resp as? HTTPURLResponse, http.statusCode >= 400 {
-            throw WfRacError.command("The unit returned HTTP \(http.statusCode) for \(command).")
+        if statusCode >= 400 {
+            throw WfRacError.command("The unit returned HTTP \(statusCode) for \(command).")
         }
         guard let obj = try? JSONSerialization.jsonObject(with: data), let dict = obj as? [String: Any] else {
             throw WfRacError.malformed("The unit answered \(command) with something that is not a proper response.")
